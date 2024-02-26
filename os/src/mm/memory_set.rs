@@ -37,6 +37,7 @@ lazy_static! {
 pub struct MemorySet {
     page_table: PageTable,
     areas: Vec<MapArea>,
+    mmapped_frames: BTreeMap<VirtPageNum, FrameTracker>, // For sys_mmap
 }
 
 impl MemorySet {
@@ -45,6 +46,7 @@ impl MemorySet {
         Self {
             page_table: PageTable::new(),
             areas: Vec::new(),
+            mmapped_frames: BTreeMap::new(),
         }
     }
     /// Get the page table token
@@ -261,6 +263,31 @@ impl MemorySet {
         } else {
             false
         }
+    }
+
+    /// Use sys_mmap to map a virtual page
+    pub fn mmap(&mut self, vpn: VirtPageNum, perm: MapPermission) -> bool {
+        if let Some(_) = self.translate(vpn) {
+            error!("Virtual page 0x{:x} mapped twice!", vpn.0);
+            return false;
+        }
+        let frame = frame_alloc().unwrap();
+        let flags = PTEFlags::from_bits(perm.bits).unwrap();
+        self.page_table
+            .map(vpn, frame.ppn, flags);
+        self.mmapped_frames.insert(vpn, frame);
+        true
+    }
+
+    /// Use sys_munmap to unmap a virtual page
+    pub fn munmap(&mut self, vpn: VirtPageNum) -> bool {
+        if self.translate(vpn).is_none() {
+            error!("Virtual page 0x{:x} unmapped twice!", vpn.0);
+            return false;
+        }
+        self.page_table.unmap(vpn);
+        self.mmapped_frames.remove(&vpn);
+        true
     }
 }
 /// map area structure, controls a contiguous piece of virtual memory

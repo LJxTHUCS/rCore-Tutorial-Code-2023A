@@ -16,6 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VPNRange, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -188,6 +189,24 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].syscall_times.clone()
     }
+
+    /// Use sys_mmap to map a new area for current task
+    fn mmap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, perm: MapPermission) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        VPNRange::new(start_vpn, end_vpn)
+            .into_iter()
+            .all(|vpn| inner.tasks[current].memory_set.mmap(vpn, perm))
+    }
+
+    /// Use sys_munmap to unmap an area for current task
+    fn munmap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        VPNRange::new(start_vpn, end_vpn)
+            .into_iter()
+            .all(|vpn| inner.tasks[current].memory_set.munmap(vpn))
+    }
 }
 
 /// Run the first task in task list.
@@ -251,4 +270,14 @@ pub fn get_start_time() -> usize {
 /// Get the syscall statistics of current task
 pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
     TASK_MANAGER.get_syscall_times()
+}
+
+/// Use sys_mmap to map a new area for current task
+pub fn mmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum, perm: MapPermission) -> bool {
+    TASK_MANAGER.mmap(start_vpn, end_vpn, perm)
+}
+
+/// Use sys_munmap to unmap an area for current task
+pub fn munmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> bool {
+    TASK_MANAGER.munmap(start_vpn, end_vpn)
 }
